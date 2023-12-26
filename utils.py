@@ -2,8 +2,9 @@
 
 import itertools
 import numpy as np
+import tensorflow as tf
 
-
+#动作空间，生成所有可能的动作，笛卡尔积sernum个数的0到total的和为total的所有组合1326,就是第一个业务的分配数量不能为零
 def action_space(total, ser_num):
     tmp = list(itertools.product(range(total + 1), repeat=ser_num))
     result = []
@@ -11,7 +12,7 @@ def action_space(total, ser_num):
         if sum(value) == total:
             result.append(list(value))
     result = np.array(result)
-    [i, j] = np.where(result == 0)
+    [i, j] = np.where(result == 0)#153 
     result = np.delete(result, i, axis=0)
     print(result.shape)
     return result
@@ -48,3 +49,9 @@ def calc__reward(qoe, se):
 
     return uility, reward
 
+if __name__=='__main__':
+    message = tf.constant('Hello, TensorFlow!')
+    with tf.Session() as sess:
+        print(sess.run(message).decode())
+        print(tf.__version__)
+        print(tf.__path__)

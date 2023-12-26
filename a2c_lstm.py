@@ -11,34 +11,38 @@ class A2CLSTM(object):
             n_features,
             lr_a=0.001,
             lr_c=0.01,
-            entropy_beta=0.01
+            entropy_beta=0.01 #折扣因子改成了交叉熵
     ):
         self.sess = sess
         self.n_actions = n_actions
         self.n_features = n_features
         self.lr_a = lr_a
         self.lr_c = lr_c
-        self.entroy_beta = entropy_beta
+        self.entroy_beta = entropy_beta #折扣因子改成了交叉熵
 
-        self.lstm_cell_size = 64
-
+        self.lstm_cell_size = 64 #LSTM的cell个数多了这个
+        #训练优化器
         OPT_A = tf.train.AdamOptimizer(self.lr_a)
         OPT_C = tf.train.AdamOptimizer(self.lr_c)
-
+        #name_scope 命名域，和variable_scope不同，variable_scope是为了共享变量，
+        #name_scope是为了更好的管理变量和tf.Variable()和tf.get_variable()都可以创建变量
+        """
+        tf.placeholder(dtype, shape=None, name=None),状态，动作和
+        """
         with tf.name_scope('inputs'):
             self.s = tf.placeholder(tf.float32, [None, self.n_features], "state")
             self.a = tf.placeholder(tf.int32, [None, 1], "action")
-            self.td_target = tf.placeholder(tf.float32, [None, 1], "td_target")
+            self.td_target = tf.placeholder(tf.float32, [None, 1], "td_target") #r 和 v_变成了这个
 
-        self.acts_prob, self.v, self.a_params, self.c_params = self._build_net()
+        self.acts_prob, self.v, self.a_params, self.c_params = self._build_net() #构建的网络返回值多了
 
         with tf.name_scope('TD_error'):
-            self.td_error = tf.subtract(self.td_target, self.v, name='TD_error')
+            self.td_error = tf.subtract(self.td_target, self.v, name='TD_error') #本质没变
 
         with tf.name_scope('c_loss'):
             self.c_loss = tf.reduce_mean(tf.square(self.td_error))
 
-        with tf.name_scope('a_loss'):
+        with tf.name_scope('a_loss'): #这个改变了很多
             log_prob = tf.reduce_sum(tf.log(self.acts_prob + 1e-5) * tf.one_hot(self.a, self.n_actions, dtype=tf.float32),
                                      axis=1, keepdims=True)
             exp_v = log_prob * tf.stop_gradient(self.td_error)
@@ -67,7 +71,7 @@ class A2CLSTM(object):
             # [time_step, feature] => [time_step, batch, feature]
             s = tf.expand_dims(self.s, axis=1, name='timely_input')
 
-            lstm_cell =  tf.nn.rnn_cell.LSTMCell(self.lstm_cell_size)
+            lstm_cell =  tf.nn.rnn_cell.LSTMCell(self.lstm_cell_size) #状态价值函数加了lstm
             self.lstm_state_init = lstm_cell.zero_state(batch_size=1, dtype=tf.float32)
 
             outputs, _ = tf.nn.dynamic_rnn(
@@ -95,17 +99,17 @@ class A2CLSTM(object):
                 bias_initializer=b_init,
                 name='V'
             )  # state value
-
+        # Actor没变
         with tf.variable_scope('Actor'):
             l_a1 = tf.layers.dense(
-                inputs=cell_out,
+                inputs=cell_out, #对 ，就是输入变成了 就是在状态层前面加了一个LSTM的输出，你在LSTM前面还可以加。
                 units=32,  # number of hidden units
                 activation=tf.nn.tanh,
                 kernel_initializer=w_init,  # weights
                 bias_initializer=b_init,  # biases
                 name='l_a1'
             )
-
+            #动作预测，这动作空间大的一批啊
             acts_prob = tf.layers.dense(
                 inputs=l_a1,
                 units=self.n_actions,  # output units

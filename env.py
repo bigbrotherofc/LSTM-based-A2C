@@ -8,22 +8,22 @@ import numpy as np
 import time
 
 np.random.seed(1)
-
+#看一下这个环境的移动性是怎么设计的
 class EnvMove(object):
     def __init__(self,
                  BS_pos=np.array([0, 0]),
                  BS_radius=40, ##-----
                  # BS_tx_power = 0, #unit is dBW
                  BS_tx_power=16,  # unit is dBW, 46dBm
-                 UE_max_no=1000,    ##-----
-                 Queue_max=5,
+                 UE_max_no=1000,    #-----最大用户数量
+                 Queue_max=5,      ##-----最大队列长度
                  noise_PSD=-204,  # -174 dbm/Hz
                  chan_mod='36814',
                  carrier_freq=2 * 10 ** 9,  # 2 GHz
                  time_subframe=0.5 * 10 ** (-3),  # by LTE, 0.5 ms
-                 ser_cat=['volte', 'embb_general', 'urllc'],
+                 ser_cat=['volte', 'embb_general', 'urllc'],#业务类型
                  band_whole=10 * 10 ** 6,  # 10MHz
-                 schedu_method='round_robin',
+                 schedu_method='round_robin', #不是比例公平啊,这个是轮询调度
                  ser_prob=np.array([6, 6, 1], dtype=np.float32),
                  dl_mimo=32,
                  rx_gain=20,  # dB
@@ -58,22 +58,22 @@ class EnvMove(object):
         else:
             self.ser_prob = np.array([1])
             self.band_ser_cat = self.band_whole
-
+        #业务到来的模型比较随便了吧，随机到一些业务
         self.UE_cat = np.random.choice(self.ser_cat, self.UE_max_no, p=self.ser_prob)  # TBD
 
         ##--------------------------------------------------------------------------
-        self.UE_pos = np.random.uniform(-3 * self.BS_radius, 3 * self.BS_radius, [self.UE_max_no, 2])
-        self.UE_cell = np.zeros(self.UE_max_no)
+        self.UE_pos = np.random.uniform(-3 * self.BS_radius, 3 * self.BS_radius, [self.UE_max_no, 2]) #（1200，2）
+        self.UE_cell = np.zeros(self.UE_max_no)# 1200阶矩阵
         self.UE_cell[np.where(np.sum(self.UE_pos ** 2, axis=1) <= self.BS_radius ** 2)] = 1
         self.UE_speed = np.zeros(UE_max_no)
         self.UE_speed[np.where(self.UE_cat == 'volte')] = 1
         self.UE_speed[np.where(self.UE_cat == 'embb_general')] = 4
         self.UE_speed[np.where(self.UE_cat == 'urllc')] = 8
-        self.UE_direction = np.random.uniform(-180, 180, self.UE_max_no)
+        self.UE_direction = np.random.uniform(-180, 180, self.UE_max_no)#至少是随机方向，虽然这个人一旦确定了方向就不会变了
         ##-------------------------------------------------------------------------##
 
-        self.tx_pkt_no = np.zeros(len(self.ser_cat))
-
+        self.tx_pkt_no = np.zeros(len(self.ser_cat))#发送的包数量，每种业务的包数量，这应该是一个用户一个的
+    # 都和位置有关但是位置是需要更新的。
     def channel_model(self):
         # 信道模型
         if self.chan_mod == '36814':
@@ -88,12 +88,13 @@ class EnvMove(object):
 
     ##-----------------------------------------------------------------------------------------------------------
     def user_move(self):
+        #位置移动模型
         l = self.UE_speed * self.learning_windows
         delta_x = l * np.cos(self.UE_direction * np.pi / 180)
         delta_y = l * np.sin(self.UE_direction * np.pi / 180)
         self.UE_pos[:, 0] = self.UE_pos[:, 0] + delta_x
         self.UE_pos[:, 1] = self.UE_pos[:, 1] + delta_y
-
+        #在范围内的用户，完全没有考虑其他小区干扰，甚至不是蜂窝，撞墙回头
         UE_index = np.where(self.UE_pos[:, 0] < -3 * self.BS_radius)
         self.UE_pos[UE_index, 0] = -6 * self.BS_radius - self.UE_pos[UE_index, 0]
         self.UE_direction[UE_index] = 180 - self.UE_direction[UE_index]
@@ -116,7 +117,7 @@ class EnvMove(object):
 
         self.UE_cell = np.zeros(self.UE_max_no)
         self.UE_cell[np.where(np.sum(self.UE_pos ** 2, axis=1) <= self.BS_radius ** 2)] = 1
-
+        #按照随机分了这么多模型然后开始移动，这距离挺莫名奇妙的
         tmp_u = self.UE_pos[np.where(self.UE_cat == 'volte')]
         tmp_dis = np.sum(tmp_u ** 2, axis=1)
         n1 = np.sum(tmp_dis <= (4 * self.BS_radius / 4) ** 2)
@@ -140,6 +141,7 @@ class EnvMove(object):
         if self.schedu_method == 'round_robin':
             ser_cat = len(self.ser_cat)
             band_ser_cat = self.band_ser_cat
+            #这就是奇数就是
             if (self.sys_clock * 10000) % (self.learning_windows * 10000) == (self.time_subframe * 10000):
                 self.ser_schedu_ind = [0] * ser_cat
 
@@ -152,11 +154,11 @@ class EnvMove(object):
 
                 UE_Active_No = len(UE_index)
                 if UE_Active_No != 0:
-                    RB_No = band_ser_cat[i] // (180 * 10 ** 3)
-                    RB_round = RB_No // UE_Active_No
+                    RB_No = band_ser_cat[i] // (180 * 10 ** 3)#RB块数量。
+                    RB_round = RB_No // UE_Active_No #平均分，每个需要的用户
                     self.UE_band[UE_index] += 180 * 10 ** 3 * RB_round
 
-                    RB_rem_no = int(RB_No - RB_round * UE_Active_No)
+                    RB_rem_no = int(RB_No - RB_round * UE_Active_No) #平均分后剩余的数量
                     left_no = np.where(UE_index > self.ser_schedu_ind[i])[0].size
                     if left_no >= RB_rem_no:
                         UE_act_index = UE_index[np.where(np.greater_equal(UE_index, self.ser_schedu_ind[i]))]
@@ -213,12 +215,13 @@ class EnvMove(object):
         rx_power = 10 ** ((self.BS_tx_power - self.chan_loss + self.UE_rx_gain) / 10)
         rx_power = rx_power.reshape(1, -1)[0]
         rate = np.zeros(self.UE_max_no)
+        #就是一个信道模型，香农信道容量
         rate[UE_index] = self.UE_band[UE_index] * np.log10(
             1 + rx_power[UE_index] / (10 ** (self.noise_PSD / 10) * self.UE_band[UE_index])) * self.dl_mimo
 
-        ##----------------------------------------------------------------------------------------------------
+        ##---------------------------------时延-----------------------------------------------------------------
         self.UE_latency[np.where(self.UE_buffer != 0)] += self.time_subframe
-
+        #实际这是每一步的更新啊，把时延算了，把buffer也更新了
         for ue_id in UE_index[0]:
             self.UE_buffer[:, ue_id] = bufferUpdate(self.UE_buffer[:, ue_id], rate[ue_id], self.time_subframe)
 

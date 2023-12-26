@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-
+# 没有用gym，自己写了一个环境，用于测试
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 import copy
 import os
 from a2c_lstm import A2CLSTM
@@ -12,7 +13,7 @@ import utils
 # SE_WEIGHT = 0.01
 UE_NUMS = 1200
 SER_PROB = [1, 2, 3]
-LEARNING_WINDOW = 2000
+LEARNING_WINDOW = 2000 #一个子帧时间0.5ms，2000个子帧是1s，一秒一步对吧
 BAND_WHOLE = 10  # M
 BAND_PER = 0.2  # M
 DL_MIMO = 64
@@ -27,7 +28,7 @@ MAX_ITERATIONS = 10000
 
 LOG_TRAIN = './logs/a2clstm.txt'
 # LOG_TRAIN = './logs/a2c.txt'
-
+# 50个片分给三个业务，每个业务的片数为0-50，总和为50，单位是hz
 action_space = utils.action_space(int(BAND_WHOLE // BAND_PER), len(SER_CAT)) * BAND_PER * 10 ** 6
 n_actions = len(action_space)
 print(n_actions)
@@ -40,10 +41,10 @@ model = A2CLSTM(sess, n_features=len(SER_CAT), n_actions=n_actions, lr_a=LR_A, l
 
 env = EnvMove(UE_max_no=UE_NUMS, ser_prob=np.array(SER_PROB, dtype=np.float32), learning_windows=LEARNING_WINDOW, dl_mimo=DL_MIMO)
 
-qoe_lst, se_lst = [], []
+qoe_lst, se_lst = [], [] #频谱和sla类似的状态
 reward_lst = []
 
-buffer_ob = []
+buffer_ob = [] #存储状态
 
 for i in range(LSTM_LEN):
     env.countReset()
@@ -51,7 +52,7 @@ for i in range(LSTM_LEN):
     env.activity()
 
     action = np.random.choice(n_actions)
-    env.band_ser_cat = action_space[action]
+    env.band_ser_cat = action_space[action] #编号代替动作空间
 
     for i_subframe in range(LEARNING_WINDOW):
         env.scheduling()
@@ -61,6 +62,7 @@ for i in range(LSTM_LEN):
 
     pkt, dis = env.get_state()
     observe = utils.gen_state(pkt)
+    #给LSTM提供训练集吗。
     buffer_ob.append(observe)
 
 for i_iter in range(MAX_ITERATIONS):
